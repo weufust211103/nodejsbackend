@@ -1,12 +1,33 @@
 const express = require("express");
+const http = require("http");
 const cors = require("cors");
-const authRoutes = require("./routes/auth");
+const { Server } = require("socket.io");
+const authRoutes = require('./src/routes/auth');
 const { authenticateToken } = require("./middleware/authMiddleware");
-const setupSwagger = require("./swagger");
+const setupSwagger = require("./src/config/swagger");
 
 const app = express();
+app.use(cors());
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 const PORT = 5000;
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
 
+  socket.on("screen-stream", (data) => {
+    // Broadcast to everyone else
+    socket.broadcast.emit("screen-stream", data);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
+  });
+});
 app.use(cors());
 app.use(express.json());
 
