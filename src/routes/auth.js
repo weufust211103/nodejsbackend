@@ -3,6 +3,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
 const { PrismaClient } = require("@prisma/client");
+const passport = require("../config/passport");
 
 dotenv.config();
 const prisma = new PrismaClient();
@@ -28,11 +29,11 @@ const router = express.Router();
  *           schema:
  *             type: object
  *             required:
- *               - name
+ *               - username
  *               - email
  *               - password
  *             properties:
- *               name:
+ *               username:
  *                 type: string
  *               email:
  *                 type: string
@@ -45,14 +46,21 @@ const router = express.Router();
  *         description: User already exists
  */
 router.post("/register", async (req, res) => {
-  const { name, email, password } = req.body;
+  const { username, email, password } = req.body;
 
-  const exists = await prisma.user.findUnique({ where: { email } });
+  const exists = await prisma.users.findFirst({
+    where: {
+      OR: [
+        { email },
+        { username }
+      ]
+    }
+  });
   if (exists) return res.status(409).json({ message: "User already exists" });
 
   const hashed = await bcrypt.hash(password, 10);
-  await prisma.user.create({
-    data: { name, email, password: hashed },
+  await prisma.users.create({
+    data: { username, email, password_hash: hashed },
   });
 
   res.status(201).json({ message: "User registered" });
@@ -96,19 +104,47 @@ router.post("/register", async (req, res) => {
  *         description: User not found
  */
 router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+  const { email, username, password } = req.body;
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  // Allow login with either email or username
+  const user = await prisma.users.findFirst({
+    where: {
+      OR: [
+        email ? { email } : undefined,
+        username ? { username } : undefined
+      ].filter(Boolean)
+    }
+  });
   if (!user) return res.status(404).json({ message: "User not found" });
 
-  const valid = await bcrypt.compare(password, user.password);
+  const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) return res.status(401).json({ message: "Invalid password" });
 
-  const token = jwt.sign({ id: user.id, email: user.email, role: "user" }, process.env.JWT_SECRET, {
+  const token = jwt.sign({ id: user.id, email: user.email, username: user.username, role: user.role || "user" }, process.env.JWT_SECRET, {
     expiresIn: "1h",
   });
 
   res.json({ message: "Logged in", token });
 });
+
+// Facebook
+router.get("/facebook", passport.authenticate("facebook", { scope: ["email"] }));
+router.get("/facebook/callback",
+  passport.authenticate("facebook", { failureRedirect: "/" }),
+  (req, res) => {
+    // Successful login, send JWT or redirect
+    res.json({ message: "Logged in with Facebook", user: req.user });
+  }
+);
+
+// Google
+router.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+router.get("/google/callback",
+  passport.authenticate("google", { failureRedirect: "/" }),
+  (req, res) => {
+    // Successful login, send JWT or redirect
+    res.json({ message: "Logged in with Google", user: req.user });
+  }
+);
 
 module.exports = router;

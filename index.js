@@ -5,6 +5,8 @@ const { Server } = require("socket.io");
 const authRoutes = require('./src/routes/auth');
 const { authenticateToken } = require("./middleware/authMiddleware");
 const setupSwagger = require("./src/config/swagger");
+const session = require("express-session");
+const passport = require("./src/config/passport");
 
 const app = express();
 app.use(cors());
@@ -31,8 +33,9 @@ io.on("connection", (socket) => {
 app.use(cors());
 app.use(express.json());
 
-// ✅ Setup Swagger
-setupSwagger(app);
+app.use(session({ secret: "TRTRMNMNMRT", resave: false, saveUninitialized: false }));
+app.use(passport.initialize());
+app.use(passport.session());
 
 app.get("/", (req, res) => {
   res.send("🚀 Node Auth API is running!");
@@ -43,6 +46,9 @@ app.use("/api", authRoutes);
 app.get("/api/protected", authenticateToken, (req, res) => {
   res.json({ message: "Protected content", user: req.user });
 });
+
+// ✅ Setup Swagger (moved to after all routes)
+setupSwagger(app);
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);

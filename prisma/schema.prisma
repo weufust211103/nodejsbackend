@@ -13,11 +13,169 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id       Int    @id @default(autoincrement())
-  name     String
-  email    String @unique
-  password String
-  createdAt DateTime @default(now())
+model users {
+  id          String   @id @default(uuid()) @db.Uuid
+  username    String   @unique @db.VarChar(50)
+  email       String   @unique @db.VarChar(100)
+  password_hash String @db.Text
+  avatar_url  String?  @db.Text
+  bio         String?  @db.Text
+  role        String?  @db.VarChar
+  created_at  DateTime @default(now()) @db.Timestamptz
+  channels    channels?
+  videos      videos[]
+  comments    comments[]
+  likes       likes[]
+  saved_videos saved_videos[]
+  follows     follows[]
+  livestreams livestreams[]
+  livestream_comments livestream_comments[]
+  livestream_chats livestream_chats[]
+  third_party_configs third_party_configs[]
+  facebookId String? @unique
+  googleId   String? @unique
+}
+
+model channels {
+  id          String   @id @default(uuid()) @db.Uuid
+  user_id     String   @unique @db.Uuid
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  created_at  DateTime @default(now()) @db.Timestamptz
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  videos      videos[]
+  follows     follows[]
+}
+
+model videos {
+  id            String   @id @default(uuid()) @db.Uuid
+  user_id       String?  @db.Uuid
+  channel_id    String?  @db.Uuid
+  livestream_id String?  @db.Uuid
+  title         String?  @db.VarChar(100)
+  description   String?  @db.Text
+  video_url     String   @db.Text
+  thumbnail_url String?  @db.Text
+  status        String?  @default("public") @db.VarChar(20)
+  is_from_livestream Boolean @default(false)
+  created_at    DateTime @default(now()) @db.Timestamptz
+  user          users?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  channel       channels? @relation(fields: [channel_id], references: [id], onDelete: SetNull)
+  livestream    livestreams? @relation(fields: [livestream_id], references: [id], onDelete: SetNull)
+  video_tags    video_tags[]
+  comments      comments[]
+  likes         likes[]
+  saved_videos  saved_videos[]
+}
+
+model tags {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String   @unique @db.VarChar(50)
+  created_at DateTime @default(now()) @db.Timestamptz
+  video_tags video_tags[]
+}
+
+model video_tags {
+  id         String   @id @default(uuid()) @db.Uuid
+  video_id   String?  @db.Uuid
+  tag_id     String?  @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz
+  video      videos?  @relation(fields: [video_id], references: [id], onDelete: Cascade)
+  tag        tags?    @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+  @@unique([video_id, tag_id])
+}
+
+model comments {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String?  @db.Uuid
+  video_id   String?  @db.Uuid
+  text       String   @db.Text
+  created_at DateTime @default(now()) @db.Timestamptz
+  user       users?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  video      videos?  @relation(fields: [video_id], references: [id], onDelete: Cascade)
+}
+
+model likes {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String?  @db.Uuid
+  video_id   String?  @db.Uuid
+  is_liked   Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz
+  user       users?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  video      videos?  @relation(fields: [video_id], references: [id], onDelete: Cascade)
+  @@unique([user_id, video_id])
+}
+
+model saved_videos {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String?  @db.Uuid
+  video_id   String?  @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz
+  user       users?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  video      videos?  @relation(fields: [video_id], references: [id], onDelete: Cascade)
+  @@unique([user_id, video_id])
+}
+
+model follows {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String?  @db.Uuid
+  channel_id String?  @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz
+  user       users?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  channel    channels? @relation(fields: [channel_id], references: [id], onDelete: Cascade)
+  @@unique([user_id, channel_id])
+}
+
+model livestreams {
+  id            String   @id @default(uuid()) @db.Uuid
+  user_id       String?  @db.Uuid
+  title         String?  @db.VarChar(100)
+  stream_url    String   @db.Text
+  thumbnail_url String?  @db.Text
+  is_live       Boolean  @default(true)
+  started_at    DateTime @default(now()) @db.Timestamptz
+  ended_at      DateTime?
+  user          users?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  videos        videos[]
+  livestream_comments livestream_comments[]
+  livestream_chats livestream_chats[]
+}
+
+model livestream_comments {
+  id            String   @id @default(uuid()) @db.Uuid
+  user_id       String?  @db.Uuid
+  livestream_id String?  @db.Uuid
+  text          String   @db.Text
+  created_at    DateTime @default(now()) @db.Timestamptz
+  user          users?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  livestream    livestreams? @relation(fields: [livestream_id], references: [id], onDelete: Cascade)
+}
+
+model livestream_chats {
+  id            String   @id @default(uuid()) @db.Uuid
+  user_id       String?  @db.Uuid
+  livestream_id String?  @db.Uuid
+  message       String   @db.Text
+  created_at    DateTime @default(now()) @db.Timestamptz
+  user          users?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  livestream    livestreams? @relation(fields: [livestream_id], references: [id], onDelete: Cascade)
+}
+
+model third_party_configs {
+  id          String   @id @default(uuid()) @db.Uuid
+  user_id     String   @db.Uuid
+  service_name String  @db.VarChar(50)
+  config_data Json     @db.JsonB
+  created_at  DateTime @default(now()) @db.Timestamptz
+  updated_at  DateTime @default(now()) @db.Timestamptz
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  @@unique([user_id, service_name])
+}
+
+model Entity {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  type       String?
+  created_at DateTime @default(now()) @db.Timestamptz
 }
 
