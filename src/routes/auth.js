@@ -147,4 +147,28 @@ router.get("/google/callback",
   }
 );
 
+/**
+ * @swagger
+ * /api/facebook:
+ *   get:
+ *     summary: Login with Facebook
+ *     description: Redirects to Facebook for OAuth login. Use in browser.
+ *     tags: [Auth]
+ *     responses:
+ *       302:
+ *         description: Redirect to Facebook OAuth
+ */
+
+/**
+ * @swagger
+ * /api/google:
+ *   get:
+ *     summary: Login with Google
+ *     description: Redirects to Google for OAuth login. Use in browser.
+ *     tags: [Auth]
+ *     responses:
+ *       302:
+ *         description: Redirect to Google OAuth
+ */
+
 module.exports = router;
