@@ -12,7 +12,8 @@ const options = {
     },
     servers: [
       {
-        url: "http://localhost:5000",
+        //url: "http://localhost:5000",
+        url: "https://nodejsbackend-m9op.onrender.com"
       },
     ],
     components: {
