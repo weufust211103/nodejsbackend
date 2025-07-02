@@ -1,5 +1,4 @@
 const express = require('express');
-const fetch = require('node-fetch');
 const session = require('express-session');
 const { PrismaClient } = require('@prisma/client');
 const router = express.Router();
