@@ -147,24 +147,6 @@ router.get('/tiktok/callback', async (req, res) => {
   }
 });
 
-// POST /api/login - User login
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  try {
-    const user = await prisma.users.findUnique({ where: { email } });
-    console.log('Login user:', user);
-    if (!user) console.error('User not found:', email);
-    if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    req.session.userId = user.id;
-    res.json({ message: 'Logged in successfully', userId: user.id });
-  } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: 'Login failed' });
-  }
-});
-
 // GET /api/logout - User logout
 router.get('/logout', (req, res) => {
   req.session.destroy((err) => {
