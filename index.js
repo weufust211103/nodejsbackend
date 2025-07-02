@@ -7,6 +7,8 @@ const { authenticateToken } = require("./middleware/authMiddleware");
 const setupSwagger = require("./src/config/swagger");
 const session = require("express-session");
 const passport = require("./src/config/passport");
+const cookieParser = require('cookie-parser');
+const tiktokRoutes = require('./src/routes/tiktok');
 
 const app = express();
 app.use(cors());
@@ -36,6 +38,9 @@ app.use(express.json());
 app.use(session({ secret: "TRTRMNMNMRT", resave: false, saveUninitialized: false }));
 app.use(passport.initialize());
 app.use(passport.session());
+
+app.use(cookieParser());
+app.use(tiktokRoutes);
 
 app.get("/", (req, res) => {
   res.send("🚀 Node Auth API is running!");
