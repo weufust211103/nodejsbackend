@@ -97,16 +97,36 @@ router.get('/tiktok/callback', async (req, res) => {
     }
 
     if (tokenData.access_token) {
+      // Fetch TikTok user info
+      const userInfoRes = await fetch('https://open.tiktokapis.com/v2/user/info/', {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` }
+      });
+      const userInfo = await userInfoRes.json();
+      const openId = tokenData.open_id;
+      const email = userInfo.data && userInfo.data.email ? userInfo.data.email : `${openId}@tiktok.local`;
+      // Try to find user by email
+      let user = await prisma.users.findUnique({ where: { email } });
+      if (!user) {
+        // Register new user with TikTok info
+        user = await prisma.users.create({
+          data: {
+            username: userInfo.data && userInfo.data.display_name ? userInfo.data.display_name : `tiktok_${openId.substring(0, 8)}`,
+            email,
+            password_hash: '', // no password for OAuth
+          }
+        });
+      }
+      req.session.userId = user.id;
       try {
         await prisma.third_party_configs.upsert({
-          where: { user_id_service_name: { user_id: userId, service_name: 'tiktok' } },
+          where: { user_id_service_name: { user_id: user.id, service_name: 'tiktok' } },
           create: {
-            user_id: userId,
+            user_id: user.id,
             service_name: 'tiktok',
             config_data: {
               access_token: tokenData.access_token,
               refresh_token: tokenData.refresh_token || null,
-              open_id: tokenData.open_id,
+              open_id: openId,
               scope: tokenData.scope,
               expires_in: tokenData.expires_in,
             },
@@ -117,7 +137,7 @@ router.get('/tiktok/callback', async (req, res) => {
             config_data: {
               access_token: tokenData.access_token,
               refresh_token: tokenData.refresh_token || null,
-              open_id: tokenData.open_id,
+              open_id: openId,
               scope: tokenData.scope,
               expires_in: tokenData.expires_in,
             },
