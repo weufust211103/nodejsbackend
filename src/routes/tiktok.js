@@ -23,7 +23,7 @@ const ensureAuthenticated = (req, res, next) => {
 };
 
 // GET /api/tiktok - Start TikTok OAuth
-router.get('/tiktok', ensureAuthenticated, (req, res) => {
+router.get('/tiktok', (req, res) => {
   const csrfState = `${req.session.userId}:${Math.random().toString(36).substring(2)}`;
   res.cookie('csrfState', csrfState, {
     maxAge: 3600000, // Increased to 1 hour
