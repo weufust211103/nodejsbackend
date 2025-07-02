@@ -1,7 +1,7 @@
 const express = require('express');
 const fetch = require('node-fetch');
 const session = require('express-session');
-const { PrismaClient } = require('@prisma/client'); // Updated import
+const { PrismaClient } = require('@prisma/client');
 const router = express.Router();
 
 // Initialize Prisma client
@@ -26,7 +26,7 @@ const ensureAuthenticated = (req, res, next) => {
 router.get('/tiktok', ensureAuthenticated, (req, res) => {
   const csrfState = `${req.session.userId}:${Math.random().toString(36).substring(2)}`;
   res.cookie('csrfState', csrfState, {
-    maxAge: 60000,
+    maxAge: 3600000, // Increased to 1 hour
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
@@ -52,6 +52,9 @@ router.get('/tiktok/callback', async (req, res) => {
 
   console.log('Callback query:', req.query);
   console.log('Expected redirect_uri:', REDIRECT_URI);
+  console.log('Received state:', state);
+  console.log('Cookie csrfState:', csrfState);
+  if (!csrfState) console.error('csrfState cookie not found or expired');
 
   if (error) {
     console.error('TikTok OAuth error:', { error, error_description, log_id });
@@ -65,10 +68,12 @@ router.get('/tiktok/callback', async (req, res) => {
   }
 
   if (!code || !state || !csrfState || state !== csrfState) {
+    console.error('CSRF validation failed:', { state, csrfState });
     return res.status(400).json({ error: 'Invalid state or missing code' });
   }
 
   const userId = state.split(':')[0];
+  console.log('Extracted userId:', userId);
 
   try {
     const tokenRes = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
@@ -83,10 +88,17 @@ router.get('/tiktok/callback', async (req, res) => {
       }),
     });
 
+    if (!tokenRes.ok) {
+      const errorText = await tokenRes.text();
+      console.error('Token request failed:', { status: tokenRes.status, errorText });
+      return res.status(400).json({ error: 'Token request failed', details: errorText });
+    }
+
     const tokenData = await tokenRes.json();
     console.log('TikTok token response:', tokenData);
 
     if (tokenData.error_code) {
+      console.error('Token exchange failed:', tokenData);
       return res.status(400).json({
         error: tokenData.message || 'Token exchange failed',
         details: { error_code: tokenData.error_code, log_id: tokenData.log_id },
@@ -140,6 +152,8 @@ router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   try {
     const user = await prisma.users.findUnique({ where: { email } });
+    console.log('Login user:', user);
+    if (!user) console.error('User not found:', email);
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
