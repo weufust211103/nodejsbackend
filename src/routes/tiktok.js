@@ -28,7 +28,7 @@ router.get('/tiktok', ensureAuthenticated, (req, res) => {
   res.cookie('csrfState', csrfState, {
     maxAge: 3600000, // Increased to 1 hour
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'sandbox',
     sameSite: 'lax',
   });
 
@@ -54,18 +54,10 @@ router.get('/tiktok/callback', async (req, res) => {
   console.log('Expected redirect_uri:', REDIRECT_URI);
   console.log('Received state:', state);
   console.log('Cookie csrfState:', csrfState);
+  if (!code) console.error('Code missing');
+  if (!state) console.error('State missing');
   if (!csrfState) console.error('csrfState cookie not found or expired');
-
-  if (error) {
-    console.error('TikTok OAuth error:', { error, error_description, log_id });
-    if (error === 'unauthorized_client' && error_description?.includes('redirect_uri')) {
-      return res.status(400).json({
-        error: 'Redirect URI mismatch',
-        details: { error_description, log_id, registered_uri: REDIRECT_URI },
-      });
-    }
-    return res.status(400).json({ error: `TikTok OAuth failed: ${error}`, details: { error_description, log_id } });
-  }
+  if (state !== csrfState) console.error('CSRF mismatch:', { state, csrfState });
 
   if (!code || !state || !csrfState || state !== csrfState) {
     console.error('CSRF validation failed:', { state, csrfState });
