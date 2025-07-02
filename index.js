@@ -40,7 +40,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 app.use(cookieParser());
-app.use(tiktokRoutes);
+app.use('/api', tiktokRoutes);
 
 app.get("/", (req, res) => {
   res.send("🚀 Node Auth API is running!");

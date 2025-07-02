@@ -6,8 +6,8 @@ const CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY;
 const CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET;
 const REDIRECT_URI = process.env.TIKTOK_REDIRECT_URI; // e.g., https://yourdomain.com/auth/tiktok/callback
 
-// Step 1: Redirect to TikTok for login
-router.get('/auth/tiktok', (req, res) => {
+// GET /api/tiktok - Start TikTok OAuth
+router.get('/tiktok', (req, res) => {
   const csrfState = Math.random().toString(36).substring(2);
   res.cookie('csrfState', csrfState, { maxAge: 60000, httpOnly: true, secure: true });
 
@@ -22,8 +22,8 @@ router.get('/auth/tiktok', (req, res) => {
   res.redirect(`https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`);
 });
 
-// Step 2: Handle TikTok callback and exchange code for access token
-router.get('/auth/tiktok/callback', async (req, res) => {
+// GET /api/tiktok/callback - Handle TikTok OAuth callback
+router.get('/tiktok/callback', async (req, res) => {
   const { code, state } = req.query;
   const csrfState = req.cookies.csrfState;
 
