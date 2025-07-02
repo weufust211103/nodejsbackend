@@ -1,7 +1,11 @@
 const express = require('express');
 const fetch = require('node-fetch');
+const session = require('express-session');
+const { PrismaClient } = require('@prisma/client'); // Updated import
 const router = express.Router();
-const prisma = require('./prisma'); // Adjust path to your Prisma client
+
+// Initialize Prisma client
+const prisma = new PrismaClient();
 
 // Environment variables
 const CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY;
@@ -12,11 +16,9 @@ if (!CLIENT_KEY || !CLIENT_SECRET || !REDIRECT_URI) {
   throw new Error('Missing TikTok environment variables');
 }
 
-// Middleware to ensure user is authenticated
+// Middleware
 const ensureAuthenticated = (req, res, next) => {
-  if (!req.session.userId) {
-    return res.status(401).json({ error: 'User must be logged in' });
-  }
+  if (!req.session.userId) return res.status(401).json({ error: 'User must be logged in' });
   next();
 };
 
@@ -39,7 +41,7 @@ router.get('/tiktok', ensureAuthenticated, (req, res) => {
   });
 
   const authUrl = `https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`;
-  console.log('Redirecting to TikTok auth URL:', authUrl);
+  console.log('Authorization URL with redirect_uri:', authUrl);
   res.redirect(authUrl);
 });
 
@@ -48,23 +50,25 @@ router.get('/tiktok/callback', async (req, res) => {
   const { code, state, error, error_description, log_id } = req.query;
   const csrfState = req.cookies.csrfState;
 
-  // Log query for debugging
   console.log('Callback query:', req.query);
+  console.log('Expected redirect_uri:', REDIRECT_URI);
 
-  // Handle TikTok error
   if (error) {
     console.error('TikTok OAuth error:', { error, error_description, log_id });
-    return res.status(400).json({
-      error: `TikTok OAuth failed: ${error}`,
-      details: { error_description, log_id },
-    });
+    if (error === 'unauthorized_client' && error_description?.includes('redirect_uri')) {
+      return res.status(400).json({
+        error: 'Redirect URI mismatch',
+        details: { error_description, log_id, registered_uri: REDIRECT_URI },
+      });
+    }
+    return res.status(400).json({ error: `TikTok OAuth failed: ${error}`, details: { error_description, log_id } });
   }
 
-  // Validate CSRF state and extract user ID
   if (!code || !state || !csrfState || state !== csrfState) {
     return res.status(400).json({ error: 'Invalid state or missing code' });
   }
-  const userId = state.split(':')[0]; // Extract user ID from state
+
+  const userId = state.split(':')[0];
 
   try {
     const tokenRes = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
@@ -90,15 +94,9 @@ router.get('/tiktok/callback', async (req, res) => {
     }
 
     if (tokenData.access_token) {
-      // Store token data in third_party_configs
       try {
         await prisma.third_party_configs.upsert({
-          where: {
-            user_id_service_name: {
-              user_id: userId,
-              service_name: 'tiktok',
-            },
-          },
+          where: { user_id_service_name: { user_id: userId, service_name: 'tiktok' } },
           create: {
             user_id: userId,
             service_name: 'tiktok',
@@ -135,6 +133,30 @@ router.get('/tiktok/callback', async (req, res) => {
     console.error('Token exchange error:', err);
     res.status(500).json({ error: 'Token exchange failed', details: err.message });
   }
+});
+
+// POST /api/login - User login
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const user = await prisma.users.findUnique({ where: { email } });
+    if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    req.session.userId = user.id;
+    res.json({ message: 'Logged in successfully', userId: user.id });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// GET /api/logout - User logout
+router.get('/logout', (req, res) => {
+  req.session.destroy((err) => {
+    if (err) return res.status(500).json({ error: 'Logout failed' });
+    res.json({ message: 'Logged out successfully' });
+  });
 });
 
 module.exports = router;
