@@ -55,10 +55,10 @@ const upload = multer({ storage });
  *               allow_download:
  *                 type: boolean
  *                 description: Allow users to download this video (default false)
- *               scheduled_at:
+ *               visibility:
  *                 type: string
- *                 format: date-time
- *                 description: Schedule video to be published at a later date/time (ISO8601)
+ *                 enum: [public, unlisted, private]
+ *                 description: Video visibility status
  *     responses:
  *       201:
  *         description: Video uploaded successfully

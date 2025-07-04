@@ -17,12 +17,7 @@ exports.uploadVideo = async (req, res) => {
 
     const userId = req.user && req.user.id ? req.user.id : null;
     if (!userId) return res.status(401).json({ error: 'Unauthorized: user id missing' });
-    let status = 'public';
-    let scheduledDate = scheduled_at ? new Date(scheduled_at) : null;
-    const now = new Date();
-    if (scheduledDate && scheduledDate > now) {
-      status = 'private';
-    }
+    const status = req.body.visibility || 'public';
     // Create video record
     const video = await prisma.videos.create({
       data: {
@@ -31,7 +26,6 @@ exports.uploadVideo = async (req, res) => {
         category,
         allow_comments: allow_comments !== undefined ? allow_comments === 'true' : true,
         allow_download: allow_download !== undefined ? allow_download === 'true' : false,
-        scheduled_at: scheduledDate,
         video_url: videoUrl,
         user_id: userId,
         status,
@@ -48,9 +42,9 @@ exports.uploadVideo = async (req, res) => {
       await prisma.video_tags.create({ data: { video_id: video.id, tag_id: tag.id } });
     }
 
-    res.status(201).json({ message: 'Video uploaded', video });
+    res.status(201).json({ message: 'Upload Video Successful!!' });
   } catch (err) {
     console.error('Upload error:', err);
-    res.status(500).json({ error: 'Failed to upload video', details: err.message });
+    res.status(500).json({ error: 'Failed to upload video', reason: err.message });
   }
 }; 
