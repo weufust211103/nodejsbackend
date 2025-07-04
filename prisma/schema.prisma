@@ -66,6 +66,10 @@ model videos {
   comments      comments[]
   likes         likes[]
   saved_videos  saved_videos[]
+  category      String?  @db.VarChar(50)
+  allow_comments Boolean? @default(true)
+  allow_download Boolean? @default(false)
+  scheduled_at  DateTime?
 }
 
 model tags {

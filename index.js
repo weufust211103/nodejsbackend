@@ -9,6 +9,7 @@ const session = require("express-session");
 const passport = require("./src/config/passport");
 const cookieParser = require('cookie-parser');
 const tiktokRoutes = require('./src/routes/tiktok');
+const videoRoutes = require('./src/routes/video');
 
 const app = express();
 app.use(cors());
@@ -41,6 +42,7 @@ app.use(passport.session());
 
 app.use(cookieParser());
 app.use('/api', tiktokRoutes);
+app.use('/api/videos', videoRoutes);
 
 app.get("/", (req, res) => {
   res.send("🚀 Node Auth API is running!");

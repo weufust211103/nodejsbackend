@@ -24,6 +24,23 @@ const options = {
           bearerFormat: "JWT",
         },
       },
+      schemas: {
+        Video: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            category: { type: 'string' },
+            video_url: { type: 'string' },
+            allow_comments: { type: 'boolean' },
+            allow_download: { type: 'boolean' },
+            scheduled_at: { type: 'string', format: 'date-time' },
+            created_at: { type: 'string', format: 'date-time' },
+            user_id: { type: 'string' },
+          },
+        },
+      },
     },
     security: [
       {

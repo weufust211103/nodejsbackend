@@ -48,7 +48,7 @@ router.get('/tiktok', (req, res) => {
 router.get('/tiktok/callback', async (req, res) => {
   const { code, state, error, error_description, log_id } = req.query;
   const csrfState = req.cookies.csrfState;
-
+console.log('Code :', req.query.code);
   console.log('Callback query:', req.query);
   console.log('Expected redirect_uri:', REDIRECT_URI);
   console.log('Received state:', state);
