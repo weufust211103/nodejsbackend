@@ -34,6 +34,7 @@ model users {
   third_party_configs third_party_configs[]
   facebookId String? @unique
   googleId   String? @unique
+  notifications notifications[]
 }
 
 model channels {
@@ -58,7 +59,9 @@ model videos {
   thumbnail_url String?  @db.Text
   status        String?  @default("public") @db.VarChar(20)
   is_from_livestream Boolean @default(false)
+  views         Int      @default(0)
   created_at    DateTime @default(now()) @db.Timestamptz
+  updated_at    DateTime @updatedAt
   user          users?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
   channel       channels? @relation(fields: [channel_id], references: [id], onDelete: SetNull)
   livestream    livestreams? @relation(fields: [livestream_id], references: [id], onDelete: SetNull)
@@ -69,6 +72,13 @@ model videos {
   category      String?  @db.VarChar(50)
   allow_comments Boolean? @default(true)
   allow_download Boolean? @default(false)
+  // TikTok-specific fields
+  tiktok_id     String?  @unique @db.VarChar(50)
+  tiktok_likes  Int?     @default(0)
+  tiktok_comments Int?   @default(0)
+  tiktok_shares Int?     @default(0)
+  tiktok_create_time DateTime?
+  is_app_content Boolean @default(false)
 }
 
 model tags {
@@ -180,5 +190,31 @@ model Entity {
   name       String
   type       String?
   created_at DateTime @default(now()) @db.Timestamptz
+}
+
+model notifications {
+  id          String   @id @default(uuid()) @db.Uuid
+  user_id     String   @db.Uuid
+  type        String   @db.VarChar(50)
+  title       String?
+  message     String
+  data        Json?
+  is_read     Boolean  @default(false)
+  created_at  DateTime @default(now()) @db.Timestamptz
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model app_tiktok_tokens {
+  id            String   @id @default(uuid()) @db.Uuid
+  access_token  String   @db.Text
+  refresh_token String   @db.Text
+  open_id       String   @db.VarChar(100)
+  scope         String   @db.VarChar(200)
+  expires_in    Int      @default(7200)
+  token_created_at DateTime @default(now()) @db.Timestamptz
+  last_refreshed_at DateTime @default(now()) @db.Timestamptz
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now()) @db.Timestamptz
+  updated_at    DateTime @updatedAt
 }
 

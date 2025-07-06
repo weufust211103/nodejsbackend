@@ -34,9 +34,10 @@ router.get('/tiktok', (req, res) => {
   const params = new URLSearchParams({
     client_key: CLIENT_KEY,
     response_type: 'code',
-    scope: 'user.info.basic',
+    scope: 'user.info.basic,video.list',
     redirect_uri: REDIRECT_URI,
     state: csrfState,
+    prompt: 'consent'
   });
 
   const authUrl = `https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`;
@@ -129,6 +130,7 @@ console.log('Code :', req.query.code);
               open_id: openId,
               scope: tokenData.scope,
               expires_in: tokenData.expires_in,
+              token_created_at: Date.now(),
             },
             created_at: new Date(),
             updated_at: new Date(),
@@ -140,6 +142,7 @@ console.log('Code :', req.query.code);
               open_id: openId,
               scope: tokenData.scope,
               expires_in: tokenData.expires_in,
+              token_created_at: Date.now(),
             },
             updated_at: new Date(),
           },
