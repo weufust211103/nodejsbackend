@@ -542,9 +542,85 @@ router.get('/tiktok/user', authenticateToken, videoController.getUserTikTokVideo
 
 /**
  * @swagger
+ * /api/videos/all-with-tags:
+ *   get:
+ *     summary: Get all videos with tags
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Number of videos per page
+ *       - in: query
+ *         name: tags
+ *         schema:
+ *           type: string
+ *         description: Comma-separated list of tags (e.g. "music,gaming")
+ *     responses:
+ *       200:
+ *         description: All videos with tags retrieved successfully
+ *       500:
+ *         description: Server error
+ */
+// GET /api/videos/all-with-tags
+router.get('/all-with-tags', videoController.getAllVideosWithTags);
+
+/**
+ * @swagger
+ * /api/videos/all:
+ *   get:
+ *     summary: Get all videos
+ *     tags: [Videos]
+ *     responses:
+ *       200:
+ *         description: All videos retrieved successfully
+ *       500:
+ *         description: Server error
+ */
+// GET /api/videos/all
+router.get('/all', videoController.getAllVideos);
+
+/**
+ * @swagger
+ * /api/videos/next:
+ *   get:
+ *     summary: Get next video by tag
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: query
+ *         name: currentVideoId
+ *         schema:
+ *           type: string
+ *         description: Current video ID
+ *       - in: query
+ *         name: tag
+ *         schema:
+ *           type: string
+ *         description: Tag for filtering
+ *     responses:
+ *       200:
+ *         description: Next video retrieved successfully
+ *       400:
+ *         description: Bad request (missing current video ID or tag)
+ *       500:
+ *         description: Server error
+ */
+// GET /api/videos/next
+router.get('/next', videoController.getNextVideoByTag);
+
+/**
+ * @swagger
  * /api/videos/{videoId}/views:
  *   post:
- *     summary: Increment video view count
+ *     summary: Increment the view count for a video
  *     tags: [Videos]
  *     parameters:
  *       - in: path
@@ -552,30 +628,14 @@ router.get('/tiktok/user', authenticateToken, videoController.getUserTikTokVideo
  *         required: true
  *         schema:
  *           type: string
- *         description: Video ID
+ *         description: The ID of the video to increment views for
  *     responses:
  *       200:
  *         description: Views incremented successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                 video:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: string
- *                     title:
- *                       type: string
- *                     views:
- *                       type: integer
  *       400:
- *         description: Bad request (missing video ID)
+ *         description: Video ID is required
  *       500:
- *         description: Server error
+ *         description: Failed to increment views
  */
 // POST /api/videos/:videoId/views
 router.post('/:videoId/views', videoController.incrementViews);
@@ -645,5 +705,41 @@ router.get('/:videoId', videoController.getVideo);
  */
 // GET /api/videos/channel/:channelId/views
 router.get('/channel/:channelId/views', videoController.getChannelTotalViews);
+
+/**
+ * @swagger
+ * /api/videos/comment:
+ *   post:
+ *     summary: Post a comment on a video
+ *     tags: [Videos]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - videoId
+ *               - text
+ *             properties:
+ *               videoId:
+ *                 type: string
+ *                 description: The ID of the video to comment on
+ *               text:
+ *                 type: string
+ *                 description: The comment text
+ *     responses:
+ *       201:
+ *         description: Comment posted successfully
+ *       400:
+ *         description: videoId and text are required
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Failed to post comment
+ */
+router.post('/comment', authenticateToken, videoController.postComment);
 
 module.exports = router; 

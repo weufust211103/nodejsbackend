@@ -194,7 +194,7 @@ async function fetchTikTokVideos(accessToken, cursor = null, maxCount = 20) {
     }
 
     const response = await axios.post(
-      `${TIKTOK_API_BASE}${TIKTOK_VIDEO_LIST_ENDPOINT}?fields=cover_image_url,id,title,create_time,video_url,description,view_count,like_count,comment_count,share_count`,
+      `${TIKTOK_API_BASE}${TIKTOK_VIDEO_LIST_ENDPOINT}?fields=cover_image_url,id,title,create_time,view_count,like_count,comment_count,share_count`,
       body,
       { headers }
     );
@@ -225,7 +225,7 @@ async function fetchAppTikTokVideos(cursor = null, maxCount = 20) {
     }
 
     const response = await axios.post(
-      `${TIKTOK_API_BASE}${TIKTOK_VIDEO_LIST_ENDPOINT}?fields=cover_image_url,id,title,create_time,video_url,description,view_count,like_count,comment_count,share_count`,
+      `${TIKTOK_API_BASE}${TIKTOK_VIDEO_LIST_ENDPOINT}?fields=cover_image_url,id,title,create_time,view_count,like_count,comment_count,share_count`,
       body,
       { headers }
     );
@@ -672,6 +672,7 @@ exports.getVideo = async (req, res) => {
       return res.status(400).json({ error: 'Video ID is required' });
     }
 
+    // Fetch video with user, channel, tags, and tiktok_shares
     const video = await prisma.videos.findUnique({
       where: { id: videoId },
       include: {
@@ -700,7 +701,35 @@ exports.getVideo = async (req, res) => {
       return res.status(404).json({ error: 'Video not found' });
     }
 
-    res.json({ video });
+    // Fetch comments with user info
+    const comments = await prisma.comments.findMany({
+      where: { video_id: videoId },
+      orderBy: { created_at: 'desc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            avatar_url: true
+          }
+        }
+      }
+    });
+
+    // Count likes for the video
+    const likeCount = await prisma.likes.count({
+      where: { video_id: videoId, is_liked: true }
+    });
+
+    // Share count from tiktok_shares field (if present)
+    const shareCount = video.tiktok_shares || 0;
+
+    res.json({
+      video,
+      comments,
+      likeCount,
+      shareCount
+    });
   } catch (err) {
     console.error('Get video error:', err);
     res.status(500).json({ error: 'Failed to get video', reason: err.message });
@@ -1114,5 +1143,160 @@ exports.forceRefreshAppToken = async (req, res) => {
       error: 'Failed to refresh app token', 
       reason: error.message 
     });
+  }
+};
+
+// Get all videos with pagination
+exports.getAllVideos = async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (page - 1) * limit;
+    const videos = await prisma.videos.findMany({
+      orderBy: { created_at: 'desc' },
+      skip: parseInt(skip),
+      take: parseInt(limit),
+      include: {
+        user: { select: { id: true, username: true, avatar_url: true } },
+        video_tags: { include: { tag: true } }
+      }
+    });
+    const total = await prisma.videos.count();
+    res.json({
+      success: true,
+      data: {
+        videos,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get all videos error:', error);
+    res.status(500).json({ error: 'Failed to get videos', reason: error.message });
+  }
+};
+
+// Get next video by tag, fallback to next video in DB if no tag matches
+exports.getNextVideoByTag = async (req, res) => {
+  try {
+    const { currentVideoId, tag } = req.query;
+    let nextVideo = null;
+    if (tag) {
+      // Find next video with the tag, excluding current video
+      nextVideo = await prisma.videos.findFirst({
+        where: {
+          id: { not: currentVideoId },
+          video_tags: {
+            some: {
+              tag: { name: tag }
+            }
+          }
+        },
+        orderBy: { created_at: 'asc' },
+        include: {
+          user: { select: { id: true, username: true, avatar_url: true } },
+          video_tags: { include: { tag: true } }
+        }
+      });
+    }
+    // If no video found by tag, get next by created_at
+    if (!nextVideo) {
+      nextVideo = await prisma.videos.findFirst({
+        where: { id: { not: currentVideoId } },
+        orderBy: { created_at: 'asc' },
+        include: {
+          user: { select: { id: true, username: true, avatar_url: true } },
+          video_tags: { include: { tag: true } }
+        }
+      });
+    }
+    if (!nextVideo) {
+      return res.status(404).json({ error: 'No next video found' });
+    }
+    res.json({ success: true, data: nextVideo });
+  } catch (error) {
+    console.error('Get next video by tag error:', error);
+    res.status(500).json({ error: 'Failed to get next video', reason: error.message });
+  }
+};
+
+// Get all videos with tags and pagination, filter by tags if provided
+exports.getAllVideosWithTags = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, tags } = req.query;
+    const skip = (page - 1) * limit;
+    let whereClause = {};
+    if (tags) {
+      const tagList = tags.split(',').map(t => t.trim()).filter(Boolean);
+      if (tagList.length > 0) {
+        whereClause = {
+          video_tags: {
+            some: {
+              tag: {
+                name: { in: tagList }
+              }
+            }
+          }
+        };
+      }
+    }
+    const videos = await prisma.videos.findMany({
+      where: whereClause,
+      orderBy: { created_at: 'desc' },
+      skip: parseInt(skip),
+      take: parseInt(limit),
+      include: {
+        user: { select: { id: true, username: true, avatar_url: true } },
+        video_tags: { include: { tag: true } }
+      }
+    });
+    const total = await prisma.videos.count({ where: whereClause });
+    res.json({
+      success: true,
+      data: {
+        videos,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get all videos with tags error:', error);
+    res.status(500).json({ error: 'Failed to get videos with tags', reason: error.message });
+  }
+};
+
+// Post a comment on a video
+exports.postComment = async (req, res) => {
+  try {
+    const { videoId, text } = req.body;
+    const userId = req.user && req.user.id ? req.user.id : null;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: user id missing' });
+    }
+    if (!videoId || !text) {
+      return res.status(400).json({ error: 'videoId and text are required' });
+    }
+    // Create the comment
+    const comment = await prisma.comments.create({
+      data: {
+        video_id: videoId,
+        user_id: userId,
+        text
+      },
+      include: {
+        user: { select: { id: true, username: true, avatar_url: true } }
+      }
+    });
+    res.status(201).json({ success: true, comment });
+  } catch (error) {
+    console.error('Post comment error:', error);
+    res.status(500).json({ error: 'Failed to post comment', reason: error.message });
   }
 }; 
