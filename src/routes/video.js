@@ -742,4 +742,36 @@ router.get('/channel/:channelId/views', videoController.getChannelTotalViews);
  */
 router.post('/comment', authenticateToken, videoController.postComment);
 
+/**
+ * @swagger
+ * /api/videos/like:
+ *   post:
+ *     summary: Like or unlike a video (toggle)
+ *     tags: [Videos]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - videoId
+ *             properties:
+ *               videoId:
+ *                 type: string
+ *                 description: The ID of the video to like/unlike
+ *     responses:
+ *       200:
+ *         description: Like toggled successfully
+ *       400:
+ *         description: videoId is required
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Failed to toggle like
+ */
+router.post('/like', authenticateToken, videoController.toggleLikeVideo);
+
 module.exports = router; 

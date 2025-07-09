@@ -8,9 +8,18 @@ const qs = require('querystring');
 
 // Helper: parse comma-separated tags
 function parseTags(tagsString) {
-  return tagsString
-    ? tagsString.split(',').map(t => t.trim()).filter(Boolean)
-    : [];
+  if (!tagsString) return [];
+  const seen = new Set();
+  return tagsString.split(',')
+    .map(t => t.trim())
+    .filter(Boolean)
+    .filter(tag => {
+      // Tag must start with # and only letters after #
+      if (!/^#[a-zA-Z]+$/.test(tag)) return false;
+      if (seen.has(tag.toLowerCase())) return false;
+      seen.add(tag.toLowerCase());
+      return true;
+    });
 }
 
 // TikTok API configuration
@@ -368,9 +377,23 @@ async function checkTikTokConnection(userId) {
 exports.uploadVideo = async (req, res) => {
   try {
     const { title, description, category, allow_comments, allow_download, tags, visibility, notify_subscribers } = req.body;
+    // Validation: title, description, and category must not be null or empty
+    if (typeof title !== 'string' || title.trim().length === 0 || title.length > 100) {
+      return res.status(400).json({ error: 'Title is required and must be at most 100 characters.' });
+    }
+    if (typeof description !== 'string' || description.trim().length === 0 || description.length > 500) {
+      return res.status(400).json({ error: 'Description is required and must be at most 500 characters.' });
+    }
+    if (typeof category !== 'string' || category.trim().length === 0) {
+      return res.status(400).json({ error: 'Category is required.' });
+    }
+    // Validation: tags
+    const tagNames = parseTags(tags);
+    if (tags && tagNames.length === 0) {
+      return res.status(400).json({ error: 'All tags must start with # and contain only letters after #.' });
+    }
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const videoUrl = `/uploads/${req.file.filename}`;
-
     const userId = req.user && req.user.id ? req.user.id : null;
     if (!userId) return res.status(401).json({ error: 'Unauthorized: user id missing' });
     const status = visibility || 'public';
@@ -388,9 +411,7 @@ exports.uploadVideo = async (req, res) => {
         views: 0,
       },
     });
-
     // Handle tags (free-form, create if not exist)
-    const tagNames = parseTags(tags);
     for (const tagName of tagNames) {
       let tag = await prisma.tags.findUnique({ where: { name: tagName } });
       if (!tag) {
@@ -398,7 +419,6 @@ exports.uploadVideo = async (req, res) => {
       }
       await prisma.video_tags.create({ data: { video_id: video.id, tag_id: tag.id } });
     }
-
     // Notify subscribers if requested
     if (notify_subscribers === 'true') {
       publisher.publish(`user:${userId}:notifications`, JSON.stringify({
@@ -408,7 +428,6 @@ exports.uploadVideo = async (req, res) => {
         message: 'A new video has been uploaded!'
       }));
     }
-
     res.status(201).json({ message: 'Upload Video Successful!!' });
   } catch (err) {
     console.error('Upload error:', err);
@@ -1298,5 +1317,62 @@ exports.postComment = async (req, res) => {
   } catch (error) {
     console.error('Post comment error:', error);
     res.status(500).json({ error: 'Failed to post comment', reason: error.message });
+  }
+};
+
+// Like or unlike a video (toggle)
+exports.toggleLikeVideo = async (req, res) => {
+  try {
+    const userId = req.user && req.user.id ? req.user.id : null;
+    const { videoId } = req.body;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: user id missing' });
+    }
+    if (!videoId) {
+      return res.status(400).json({ error: 'videoId is required' });
+    }
+    // Check if user already liked the video
+    const existingLike = await prisma.likes.findUnique({
+      where: {
+        user_id_video_id: {
+          user_id: userId,
+          video_id: videoId
+        }
+      }
+    });
+    let liked;
+    if (existingLike && existingLike.is_liked) {
+      // Unlike (delete or set is_liked to false)
+      await prisma.likes.delete({
+        where: {
+          user_id_video_id: {
+            user_id: userId,
+            video_id: videoId
+          }
+        }
+      });
+      liked = false;
+    } else {
+      // Like
+      await prisma.likes.upsert({
+        where: {
+          user_id_video_id: {
+            user_id: userId,
+            video_id: videoId
+          }
+        },
+        update: { is_liked: true },
+        create: { user_id: userId, video_id: videoId, is_liked: true }
+      });
+      liked = true;
+    }
+    // Get new like count
+    const likeCount = await prisma.likes.count({
+      where: { video_id: videoId, is_liked: true }
+    });
+    res.json({ success: true, liked, likeCount });
+  } catch (error) {
+    console.error('Toggle like video error:', error);
+    res.status(500).json({ error: 'Failed to toggle like', reason: error.message });
   }
 }; 
