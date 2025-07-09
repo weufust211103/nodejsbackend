@@ -395,7 +395,7 @@ exports.uploadVideo = async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const videoUrl = `/uploads/${req.file.filename}`;
     const userId = req.user && req.user.id ? req.user.id : null;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized: user id missing' });
+    if (!userId) return res.status(401).json({ error: 'Please Login First to Upload Video' });
     const status = visibility || 'public';
     // Create video record
     const video = await prisma.videos.create({
