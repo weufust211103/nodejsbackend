@@ -79,6 +79,7 @@ model videos {
   tiktok_shares Int?     @default(0)
   tiktok_create_time DateTime?
   is_app_content Boolean @default(false)
+  tiktok_extra Json?
 }
 
 model tags {

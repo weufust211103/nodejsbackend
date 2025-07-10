@@ -1,9 +1,13 @@
+require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const videoController = require('../controllers/videoController');
 const { authenticateToken } = require('../../middleware/authMiddleware');
 const router = express.Router();
+const { ApifyClient } = require('apify-client');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 // Multer setup
 const storage = multer.diskStorage({
@@ -73,6 +77,16 @@ const upload = multer({ storage });
  *                   $ref: '#/components/schemas/Video'
  *       400:
  *         description: Bad request (missing file or required fields)
+ *       401:
+ *         description: Unauthorized. Please Login First to Upload Video.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Please Login First to Upload Video
  *       500:
  *         description: Server error
  */
@@ -773,5 +787,99 @@ router.post('/comment', authenticateToken, videoController.postComment);
  *         description: Failed to toggle like
  */
 router.post('/like', authenticateToken, videoController.toggleLikeVideo);
+
+/**
+ * @swagger
+ * /api/videos/tiktok/apify/fetch:
+ *   post:
+ *     summary: Fetch TikTok videos using Apify and save to database
+ *     tags: [TikTok]
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               hashtags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["fyp"]
+ *               limit:
+ *                 type: integer
+ *                 description: Maximum number of videos to fetch and save
+ *                 example: 10
+ *     responses:
+ *       200:
+ *         description: Videos fetched and saved successfully
+ *       500:
+ *         description: Server error
+ */
+router.post('/tiktok/apify/fetch', async (req, res) => {
+  try {
+    const { hashtags = ["fyp"], limit = 20 } = req.body;
+
+    const client = new ApifyClient({ token: process.env.APIFY_API_TOKEN });
+
+    const input = {
+      hashtags,
+      resultsPerPage: limit, // Pass limit to Apify actor
+      profileScrapeSections: ["videos"],
+      profileSorting: "latest",
+      excludePinnedPosts: false,
+      searchSection: "",
+      maxProfilesPerQuery: 10,
+      scrapeRelatedVideos: false,
+      shouldDownloadVideos: true,
+      shouldDownloadCovers: true,
+      shouldDownloadSubtitles: true,
+      shouldDownloadSlideshowImages: true,
+      shouldDownloadAvatars: true,
+      shouldDownloadMusicCovers: false,
+      proxyCountryCode: "None"
+    };
+
+    // Run the Actor and wait for it to finish
+    const run = await client.actor("GdWCkxBtKWOsKjdch").call(input);
+
+    // Fetch Actor results from the run's dataset
+    const { items } = await client.dataset(run.defaultDatasetId).listItems();
+
+    // Save up to 'limit' items to your database
+    let saved = 0;
+    for (const item of items) {
+      if (saved >= limit) break;
+      if (!item.id) continue;
+      const exists = await prisma.videos.findUnique({ where: { tiktok_id: item.id } });
+      if (exists) continue;
+
+      await prisma.videos.create({
+        data: {
+          tiktok_id: item.id,
+          title: item.text?.slice(0, 100) || 'No title', // text -> title
+          description: item.text || '',
+          video_url: Array.isArray(item.mediaUrls) && item.mediaUrls.length > 0 ? item.mediaUrls[0] : '', // mediaUrls[0] -> video_url
+          thumbnail_url: item.videoMeta?.coverUrl || '', // videoMeta.coverUrl -> thumbnail_url
+          status: 'public',
+          views: item.playCount || 0, // playCount -> views
+          tiktok_likes: item.diggCount || 0,
+          tiktok_comments: item.commentCount || 0,
+          tiktok_shares: item.shareCount || 0,
+          tiktok_create_time: item.createTimeISO ? new Date(item.createTimeISO) : null,
+          is_app_content: true,
+          category: 'tiktok',
+          tiktok_extra: item // Save the full TikTok object for rich data
+        }
+      });
+      saved++;
+    }
+
+    res.json({ message: `Fetched and saved ${saved} TikTok videos.` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch or save TikTok videos', reason: err.message });
+  }
+});
 
 module.exports = router; 
