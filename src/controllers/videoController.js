@@ -5,6 +5,9 @@ const redis = require('redis');
 const publisher = redis.createClient();
 const axios = require('axios');
 const qs = require('querystring');
+const s3 = require('../config/s3');
+const { PutObjectCommand } = require('@aws-sdk/client-s3');
+const fs = require('fs');
 
 // Helper: parse comma-separated tags
 function parseTags(tagsString) {
@@ -374,17 +377,41 @@ async function checkTikTokConnection(userId) {
   };
 }
 
+// Example for a single video response (adjust for list if needed)
+function formatVideoResponse(video, likesCount) {
+  // Hide TikTok fields and override like count if tiktok_likes is not 0
+  const {
+    allow_comments, allow_download, tiktok_id, tiktok_likes, tiktok_comments, tiktok_shares, tiktok_create_time, is_app_content, tiktok_extra, ...rest
+  } = video;
+  return {
+    ...rest,
+    likesCount: (tiktok_likes && tiktok_likes !== 0) ? tiktok_likes : likesCount
+  };
+}
+
+async function uploadFileToS3(localFilePath, s3Key) {
+  const fileStream = fs.createReadStream(localFilePath);
+  const uploadParams = {
+    Bucket: process.env.AWS_S3_BUCKET,
+    Key: s3Key,
+    Body: fileStream,
+    ContentType: 'video/mp4', // Adjust if needed
+  };
+  await s3.send(new PutObjectCommand(uploadParams));
+  return `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+}
+
 exports.uploadVideo = async (req, res) => {
   try {
     const { title, description, category, allow_comments, allow_download, tags, visibility, notify_subscribers } = req.body;
     // Validation: title, description, and category must not be null or empty
-    if (typeof title !== 'string' || title.trim().length === 0 || title.length > 100) {
+    if (!title || typeof title !== 'string' || title.trim().length === 0 || title.length > 100) {
       return res.status(400).json({ error: 'Title is required and must be at most 100 characters.' });
     }
-    if (typeof description !== 'string' || description.trim().length === 0 || description.length > 500) {
+    if (!description || typeof description !== 'string' || description.trim().length === 0 || description.length > 500) {
       return res.status(400).json({ error: 'Description is required and must be at most 500 characters.' });
     }
-    if (typeof category !== 'string' || category.trim().length === 0) {
+    if (!category || typeof category !== 'string' || category.trim().length === 0) {
       return res.status(400).json({ error: 'Category is required.' });
     }
     // Validation: tags
@@ -393,42 +420,80 @@ exports.uploadVideo = async (req, res) => {
       return res.status(400).json({ error: 'All tags must start with # and contain only letters after #.' });
     }
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const videoUrl = `/uploads/${req.file.filename}`;
     const userId = req.user && req.user.id ? req.user.id : null;
     if (!userId) return res.status(401).json({ error: 'Please Login First to Upload Video' });
+    // Fetch the user's channel
+    let channel;
+    try {
+      channel = await prisma.channels.findUnique({ where: { user_id: userId } });
+    } catch (err) {
+      console.error('Error fetching channel:', err);
+      return res.status(500).json({ error: 'Failed to fetch user channel', reason: err.message });
+    }
+    if (!channel) return res.status(400).json({ error: 'User does not have a channel' });
+    if (!channel.id) return res.status(400).json({ error: 'Invalid channel ID' });
     const status = visibility || 'public';
+
+    // Upload video to S3
+    const localFilePath = req.file.path;
+    const s3Key = `videos/${channel.id}/${Date.now()}_${path.basename(localFilePath)}`;
+    let s3Url;
+    try {
+      s3Url = await uploadFileToS3(localFilePath, s3Key);
+      fs.unlinkSync(localFilePath); // Optionally delete local file after upload
+    } catch (err) {
+      console.error('Error uploading to S3:', err);
+      return res.status(500).json({ error: 'Failed to upload to S3', reason: err.message });
+    }
+
     // Create video record
-    const video = await prisma.videos.create({
-      data: {
-        title,
-        description,
-        category,
-        allow_comments: allow_comments !== undefined ? allow_comments === 'true' : true,
-        allow_download: allow_download !== undefined ? allow_download === 'true' : false,
-        video_url: videoUrl,
-        user_id: userId,
-        status,
-        views: 0,
-      },
-    });
+    let video;
+    try {
+      video = await prisma.videos.create({
+        data: {
+          title,
+          description,
+          category,
+          allow_comments: allow_comments !== undefined ? allow_comments === 'true' : true,
+          allow_download: allow_download !== undefined ? allow_download === 'true' : false,
+          video_url: s3Url,
+          channel_id: channel.id,
+          status,
+          views: 0,
+        },
+      });
+    } catch (err) {
+      console.error('Error creating video:', err);
+      return res.status(500).json({ error: 'Failed to create video', reason: err.message });
+    }
     // Handle tags (free-form, create if not exist)
     for (const tagName of tagNames) {
-      let tag = await prisma.tags.findUnique({ where: { name: tagName } });
-      if (!tag) {
-        tag = await prisma.tags.create({ data: { name: tagName } });
+      try {
+        let tag = await prisma.tags.findUnique({ where: { name: tagName } });
+        if (!tag) {
+          tag = await prisma.tags.create({ data: { name: tagName } });
+        }
+        await prisma.video_tags.create({ data: { video_id: video.id, tag_id: tag.id } });
+      } catch (err) {
+        console.error(`Error handling tag ${tagName}:`, err);
+        // Continue to next tag
       }
-      await prisma.video_tags.create({ data: { video_id: video.id, tag_id: tag.id } });
     }
     // Notify subscribers if requested
     if (notify_subscribers === 'true') {
-      publisher.publish(`user:${userId}:notifications`, JSON.stringify({
-        type: 'video_upload',
-        videoId: video.id,
-        title: video.title,
-        message: 'A new video has been uploaded!'
-      }));
+      try {
+        publisher.publish(`user:${userId}:notifications`, JSON.stringify({
+          type: 'video_upload',
+          videoId: video.id,
+          title: video.title,
+          message: 'A new video has been uploaded!'
+        }));
+      } catch (err) {
+        console.error('Error notifying subscribers:', err);
+        // Continue
+      }
     }
-    res.status(201).json({ message: 'Upload Video Successful!!' });
+    res.status(201).json({ message: 'Upload Video Successful!!', video_url: s3Url });
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: 'Failed to upload video', reason: err.message });
@@ -695,13 +760,6 @@ exports.getVideo = async (req, res) => {
     const video = await prisma.videos.findUnique({
       where: { id: videoId },
       include: {
-        user: {
-          select: {
-            id: true,
-            username: true,
-            avatar_url: true
-          }
-        },
         channel: {
           select: {
             id: true,
@@ -744,7 +802,7 @@ exports.getVideo = async (req, res) => {
     const shareCount = video.tiktok_shares || 0;
 
     res.json({
-      video,
+      video: formatVideoResponse(video, likeCount),
       comments,
       likeCount,
       shareCount
@@ -1175,7 +1233,13 @@ exports.getAllVideos = async (req, res) => {
       skip: parseInt(skip),
       take: parseInt(limit),
       include: {
-        user: { select: { id: true, username: true, avatar_url: true } },
+        channel: {
+          select: {
+            id: true,
+            name: true,
+            // add more channel fields if needed
+          }
+        },
         video_tags: { include: { tag: true } }
       }
     });
@@ -1324,18 +1388,35 @@ exports.postComment = async (req, res) => {
 exports.toggleLikeVideo = async (req, res) => {
   try {
     const userId = req.user && req.user.id ? req.user.id : null;
-    const { videoId } = req.body;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized: user id missing' });
     }
+    const { videoId } = req.body;
     if (!videoId) {
       return res.status(400).json({ error: 'videoId is required' });
     }
+
+    // Validate that the video exists and has a valid channel_id
+    const video = await prisma.videos.findUnique({ where: { id: videoId } });
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+    if (!video.channel_id) {
+      return res.status(400).json({ error: 'Cannot like a video that is not associated with a channel' });
+    }
+
+    // Fetch the user's channel
+    const channel = await prisma.channels.findUnique({ where: { user_id: userId } });
+    if (!channel) {
+      return res.status(400).json({ error: 'User does not have a channel' });
+    }
+    const channelId = channel.id;
+
     // Check if user already liked the video
     const existingLike = await prisma.likes.findUnique({
       where: {
-        user_id_video_id: {
-          user_id: userId,
+        channel_id_video_id: {
+          channel_id: channelId,
           video_id: videoId
         }
       }
@@ -1345,8 +1426,8 @@ exports.toggleLikeVideo = async (req, res) => {
       // Unlike (delete or set is_liked to false)
       await prisma.likes.delete({
         where: {
-          user_id_video_id: {
-            user_id: userId,
+          channel_id_video_id: {
+            channel_id: channelId,
             video_id: videoId
           }
         }
@@ -1356,13 +1437,13 @@ exports.toggleLikeVideo = async (req, res) => {
       // Like
       await prisma.likes.upsert({
         where: {
-          user_id_video_id: {
-            user_id: userId,
+          channel_id_video_id: {
+            channel_id: channelId,
             video_id: videoId
           }
         },
         update: { is_liked: true },
-        create: { user_id: userId, video_id: videoId, is_liked: true }
+        create: { channel_id: channelId, video_id: videoId, is_liked: true }
       });
       liked = true;
     }

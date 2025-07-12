@@ -12,8 +12,8 @@ const options = {
     },
     servers: [
       {
-        //url: "http://localhost:5000",
-          url: "https://nodejsbackend-m9op.onrender.com"
+        url: "http://localhost:5000",
+        //url: "https://nodejsbackend-m9op.onrender.com"
       },
     ],
     components: {
@@ -40,6 +40,21 @@ const options = {
             user_id: { type: 'string' },
           },
         },
+        ChannelStats: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            user_id: { type: 'string' },
+            name: { type: 'string' },
+            description: { type: 'string' },
+            created_at: { type: 'string', format: 'date-time' },
+            followsCount: { type: 'integer', example: 0 },
+            followersCount: { type: 'integer', example: 0 },
+            videosCount: { type: 'integer', example: 0 },
+            likesCount: { type: 'integer', example: 0 },
+            viewsCount: { type: 'integer', example: 0 }
+          }
+        }
       },
     },
     security: [

@@ -107,6 +107,17 @@ router.get("/google/callback",
   }
 );
 
+// View user profile
+router.get('/users/:id/profile', authController.getUserProfile);
+// Edit user profile
+router.put('/users/:id/profile', authController.editUserProfile);
+// View user channel details
+router.get('/users/:id/channel', authController.getUserChannel);
+// Get all channels
+router.get('/channels', authController.getAllChannels);
+// Get all users
+router.get('/users', authController.getAllUsers);
+
 /**
  * @swagger
  * /api/facebook:
@@ -129,6 +140,116 @@ router.get("/google/callback",
  *     responses:
  *       302:
  *         description: Redirect to Google OAuth
+ */
+
+/**
+ * @swagger
+ * /api/users/{id}/profile:
+ *   get:
+ *     summary: Get user profile by user ID
+ *     tags: [Auth]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: User profile retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                 username:
+ *                   type: string
+ *                 email:
+ *                   type: string
+ *                 avatar_url:
+ *                   type: string
+ *                 bio:
+ *                   type: string
+ *                 role:
+ *                   type: string
+ *                 created_at:
+ *                   type: string
+ *                   format: date-time
+ *       404:
+ *         description: User not found
+ *
+ *   put:
+ *     summary: Edit user profile by user ID
+ *     tags: [Auth]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *               avatar_url:
+ *                 type: string
+ *               bio:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: User profile updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                 username:
+ *                   type: string
+ *                 email:
+ *                   type: string
+ *                 avatar_url:
+ *                   type: string
+ *                 bio:
+ *                   type: string
+ *                 role:
+ *                   type: string
+ *                 created_at:
+ *                   type: string
+ *                   format: date-time
+ *       404:
+ *         description: User not found
+ *
+ * /api/users/{id}/channel:
+ *   get:
+ *     summary: Get user channel details by user ID
+ *     tags: [Auth]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: Channel details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ChannelStats'
+ *       404:
+ *         description: Channel not found
  */
 
 module.exports = router;
