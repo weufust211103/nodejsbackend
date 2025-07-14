@@ -401,6 +401,43 @@ async function uploadFileToS3(localFilePath, s3Key) {
   return `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
 }
 
+// Helper: Upload video to TikTok in chunks (multi-chunk or single-chunk)
+async function uploadVideoInChunks(localFilePath, uploadUrl, videoSize, chunkSize) {
+  const totalChunkCount = Math.ceil(videoSize / chunkSize);
+  const fileDescriptor = fs.openSync(localFilePath, 'r');
+  let offset = 0;
+  for (let chunkIndex = 0; chunkIndex < totalChunkCount; chunkIndex++) {
+    const start = offset;
+    const end = Math.min(start + chunkSize, videoSize);
+    const chunkLength = end - start;
+    const buffer = Buffer.alloc(chunkLength);
+    fs.readSync(fileDescriptor, buffer, 0, chunkLength, start);
+    const contentRange = `bytes ${start}-${end - 1}/${videoSize}`;
+    console.log(`Uploading chunk ${chunkIndex + 1}/${totalChunkCount}: ${contentRange}`);
+    const response = await axios.put(
+      uploadUrl,
+      buffer,
+      {
+        headers: {
+          'Content-Type': 'video/mp4',
+          'Content-Length': chunkLength,
+          'Content-Range': contentRange
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      }
+    );
+    if (chunkIndex < totalChunkCount - 1 && response.status !== 206) {
+      throw new Error(`Chunk ${chunkIndex + 1} failed: ${response.status}`);
+    }
+    if (chunkIndex === totalChunkCount - 1 && response.status !== 201) {
+      throw new Error(`Final chunk failed: ${response.status}`);
+    }
+    offset = end;
+  }
+  fs.closeSync(fileDescriptor);
+}
+
 exports.uploadVideo = async (req, res) => {
   try {
     const { title, description, category, allow_comments, allow_download, tags, visibility, notify_subscribers } = req.body;
@@ -517,30 +554,33 @@ exports.uploadVideoToTikTok = async (req, res) => {
       return res.status(400).json({ error: 'All tags must start with # and contain only letters after #.' });
     }
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const userId = req.user && req.user.id ? req.user.id : null;
-    if (!userId) return res.status(401).json({ error: 'Please Login First to Upload Video' });
 
-    // Get TikTok access token from third_party_configs
-    const tiktokConfig = await prisma.third_party_configs.findUnique({
-      where: {
-        user_id_service_name: {
-          user_id: userId,
-          service_name: 'tiktok'
-        }
-      }
+    // Use the first TikTok access token found in the DB (no user filter)
+    const tiktokConfig = await prisma.third_party_configs.findFirst({
+      where: { service_name: 'tiktok' }
     });
     if (!tiktokConfig || !tiktokConfig.config_data || !tiktokConfig.config_data.access_token) {
-      return res.status(400).json({ error: 'TikTok not connected for this user' });
+      return res.status(500).json({ error: 'TikTok access token not found in DB' });
     }
     const tiktokAccessToken = tiktokConfig.config_data.access_token;
 
     // Prepare video file for upload
     const localFilePath = req.file.path;
-    const fs = require('fs');
     const stat = fs.statSync(localFilePath);
     const videoSize = stat.size;
-    const chunkSize = videoSize; // single chunk
-    const totalChunkCount = 1;
+    if (videoSize === 0) {
+      return res.status(400).json({ error: 'Uploaded file is empty (0 bytes). Please upload a valid video file.' });
+    }
+
+    // Determine chunk size and count
+    let chunkSize, totalChunkCount;
+    if (videoSize <= 64 * 1024 * 1024) { // <= 64MB, single chunk
+      chunkSize = videoSize;
+      totalChunkCount = 1;
+    } else {
+      chunkSize = 64 * 1024 * 1024; // 64MB
+      totalChunkCount = Math.ceil(videoSize / chunkSize);
+    }
 
     // Step 1: Call TikTok API to init upload (source=FILE_UPLOAD)
     let tiktokInitResponse;
@@ -551,7 +591,7 @@ exports.uploadVideoToTikTok = async (req, res) => {
           post_info: {
             title,
             description,
-            privacy_level: visibility === 'private' ? 'SELF_ONLY' : (visibility === 'unlisted' ? 'MUTUAL_FOLLOW_FRIENDS' : 'PUBLIC_TO_EVERYONE'),
+            privacy_level: 'SELF_ONLY', // must be exactly this
             disable_duet: false,
             disable_comment: allow_comments === 'false',
             disable_stitch: false,
@@ -572,6 +612,7 @@ exports.uploadVideoToTikTok = async (req, res) => {
         }
       );
       tiktokInitResponse = initRes.data;
+      console.log('TikTok upload init response:', tiktokInitResponse);
     } catch (err) {
       console.error('Error initializing TikTok upload:', err.response?.data || err.message);
       return res.status(500).json({ error: 'Failed to initialize TikTok upload', reason: err.response?.data || err.message });
@@ -581,33 +622,20 @@ exports.uploadVideoToTikTok = async (req, res) => {
       return res.status(500).json({ error: 'TikTok did not return an upload_url', tiktokInitResponse });
     }
 
-    // Step 2: Upload the video file to TikTok (single chunk)
-    let uploadResponse;
+    // Step 2: Upload the video file to TikTok (single or multi-chunk)
     try {
-      const fileStream = fs.createReadStream(localFilePath);
-      uploadResponse = await axios.put(
-        tiktokInitResponse.data.upload_url,
-        fileStream,
-        {
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'Content-Length': videoSize
-          },
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity
-        }
-      );
+      await uploadVideoInChunks(localFilePath, tiktokInitResponse.data.upload_url, videoSize, chunkSize);
       fs.unlinkSync(localFilePath); // Optionally delete local file after upload
+      console.log('TikTok upload completed');
     } catch (err) {
       console.error('Error uploading video to TikTok:', err.response?.data || err.message);
       return res.status(500).json({ error: 'Failed to upload video to TikTok', reason: err.response?.data || err.message });
     }
 
-    // Step 3: Fetch the user's latest TikTok videos to get the video_url
+    // Step 3: Fetch the latest TikTok video (optional, may not work for app-level tokens)
     let tiktokVideoUrl = '';
     let tiktokVideoMeta = null;
     try {
-      // Fetch TikTok videos for the user (assumes video.list scope)
       const videoListRes = await axios.post(
         'https://open.tiktokapis.com/v2/video/list/?fields=cover_image_url,id,title,create_time,view_count,like_count,comment_count,share_count,video_url',
         { max_count: 1 },
@@ -625,62 +653,52 @@ exports.uploadVideoToTikTok = async (req, res) => {
       }
     } catch (err) {
       console.error('Error fetching TikTok video list:', err.response?.data || err.message);
-      // Continue, but tiktokVideoUrl may be empty
     }
 
-    // Step 4: Save the video to your own database (associate with user's channel)
-    let channel;
-    try {
-      channel = await prisma.channels.findUnique({ where: { user_id: userId } });
-    } catch (err) {
-      console.error('Error fetching channel:', err);
-    }
+    // Step 4: Save the video to your own database (no user/channel association)
     let videoRecord = null;
-    if (channel && channel.id) {
-      try {
-        videoRecord = await prisma.videos.create({
-          data: {
-            title,
-            description,
-            category,
-            allow_comments: allow_comments !== undefined ? allow_comments === 'true' : true,
-            allow_download: allow_download !== undefined ? allow_download === 'true' : false,
-            video_url: tiktokVideoUrl,
-            channel_id: channel.id,
-            status: visibility || 'public',
-            views: 0,
-            tiktok_id: tiktokInitResponse.data.publish_id,
-            tiktok_likes: tiktokVideoMeta?.like_count || 0,
-            tiktok_comments: tiktokVideoMeta?.comment_count || 0,
-            tiktok_shares: tiktokVideoMeta?.share_count || 0,
-            tiktok_create_time: tiktokVideoMeta?.create_time ? new Date(tiktokVideoMeta.create_time * 1000) : null,
-            category: 'tiktok',
-            allow_comments: true,
-            allow_download: false
-          },
-        });
-        // Handle tags (free-form, create if not exist)
-        for (const tagName of tagNames) {
-          try {
-            let tag = await prisma.tags.findUnique({ where: { name: tagName } });
-            if (!tag) {
-              tag = await prisma.tags.create({ data: { name: tagName } });
-            }
-            await prisma.video_tags.create({ data: { video_id: videoRecord.id, tag_id: tag.id } });
-          } catch (err) {
-            console.error(`Error handling tag ${tagName}:`, err);
+    try {
+      videoRecord = await prisma.videos.create({
+        data: {
+          title,
+          description,
+          category,
+          allow_comments: allow_comments !== undefined ? allow_comments === 'true' : true,
+          allow_download: allow_download !== undefined ? allow_download === 'true' : false,
+          video_url: tiktokVideoUrl,
+          status: visibility || 'public',
+          views: 0,
+          tiktok_id: tiktokInitResponse.data.publish_id,
+          tiktok_likes: tiktokVideoMeta?.like_count || 0,
+          tiktok_comments: tiktokVideoMeta?.comment_count || 0,
+          tiktok_shares: tiktokVideoMeta?.share_count || 0,
+          tiktok_create_time: tiktokVideoMeta?.create_time ? new Date(tiktokVideoMeta.create_time * 1000) : null,
+          category: 'tiktok',
+          allow_comments: true,
+          allow_download: false
+        },
+      });
+      // Handle tags (free-form, create if not exist)
+      for (const tagName of tagNames) {
+        try {
+          let tag = await prisma.tags.findUnique({ where: { name: tagName } });
+          if (!tag) {
+            tag = await prisma.tags.create({ data: { name: tagName } });
           }
+          await prisma.video_tags.create({ data: { video_id: videoRecord.id, tag_id: tag.id } });
+        } catch (err) {
+          console.error(`Error handling tag ${tagName}:`, err);
         }
-      } catch (err) {
-        console.error('Error saving video to DB:', err);
       }
+    } catch (err) {
+      console.error('Error saving video to DB:', err);
     }
 
-    // Step 5: Respond to client with TikTok publish_id, upload status, and saved video
+    // Step 5: Respond to client
     res.status(201).json({
       message: 'Upload Video to TikTok Successful!!',
       tiktok: tiktokInitResponse,
-      upload: uploadResponse.data || 'Upload completed',
+      upload: 'Upload completed',
       publish_id: tiktokInitResponse.data.publish_id,
       video_url: tiktokVideoUrl,
       video: videoRecord
@@ -700,13 +718,16 @@ exports.getTikTokConnectionStatus = async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized: user id missing' });
     }
 
-    const { connected, config } = await checkTikTokConnection(userId);
-    
+    const tiktokConfig = await prisma.third_party_configs.findFirst({
+      where: { service_name: 'tiktok' }
+    });
+    const connected = !!(tiktokConfig && tiktokConfig.config_data && tiktokConfig.config_data.access_token);
+    const scope = tiktokConfig?.config_data?.scope || null;
     res.json({
       success: true,
       connected,
-      hasVideoListScope: connected && config?.config_data?.scope?.includes('video.list'),
-      scope: config?.config_data?.scope || null
+      hasVideoListScope: connected && scope && scope.includes('video.list'),
+      scope
     });
   } catch (error) {
     console.error('Get TikTok connection status error:', error);
