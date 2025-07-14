@@ -14,23 +14,26 @@ datasource db {
 }
 
 model users {
-  id          String   @id @default(uuid()) @db.Uuid
-  username    String   @unique @db.VarChar(50)
-  email       String   @unique @db.VarChar(100)
-  password_hash String @db.Text
-  avatar_url  String?  @db.Text
-  bio         String?  @db.Text
-  role        String?  @db.VarChar
-  created_at  DateTime @default(now()) @db.Timestamptz
-  channel     channels?
-  comments    comments[]
-  saved_videos saved_videos[]
-  facebookId String? @unique
-  googleId   String? @unique
-  notifications notifications[]
+  id             String   @id @default(uuid()) @db.Uuid
+  username       String   @unique @db.VarChar(50)
+  email          String   @unique @db.VarChar(100)
+  password_hash  String   @db.Text
+  avatar_url     String?  @db.Text
+  bio            String?  @db.Text
+  role           String?  @db.VarChar
+  created_at     DateTime @default(now()) @db.Timestamptz
+  channel        channels?
+  comments       comments[]
+  saved_videos   saved_videos[]
+  notifications  notifications[]
   livestream_comments livestream_comments[]
   livestream_chats livestream_chats[]
   third_party_configs third_party_configs[]
+  location    String?  @db.VarChar(100)
+  website     String?  @db.VarChar(200)
+  twitter     String?  @db.VarChar(100)
+  instagram   String?  @db.VarChar(100)
+  youtube     String?  @db.VarChar(100)
 }
 
 model channels {

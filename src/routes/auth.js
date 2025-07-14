@@ -5,6 +5,7 @@ const dotenv = require("dotenv");
 const { PrismaClient } = require("@prisma/client");
 const passport = require("../config/passport");
 const authController = require("../controllers/authController");
+const { authenticateJWT } = require('../../middleware/authMiddleware');
 
 dotenv.config();
 const prisma = new PrismaClient();
@@ -87,60 +88,54 @@ router.post("/register", authController.register);
  */
 router.post("/login", authController.login);
 
-// Facebook
-router.get("/facebook", passport.authenticate("facebook", { scope: ["email"] }));
-router.get("/facebook/callback",
-  passport.authenticate("facebook", { failureRedirect: "/" }),
-  (req, res) => {
-    // Successful login, send JWT or redirect
-    res.json({ message: "Logged in with Facebook", user: req.user });
-  }
-);
-
-// Google
-router.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
-router.get("/google/callback",
-  passport.authenticate("google", { failureRedirect: "/" }),
-  (req, res) => {
-    // Successful login, send JWT or redirect
-    res.json({ message: "Logged in with Google", user: req.user });
-  }
-);
-
-// View user profile
-router.get('/users/:id/profile', authController.getUserProfile);
-// Edit user profile
-router.put('/users/:id/profile', authController.editUserProfile);
-// View user channel details
-router.get('/users/:id/channel', authController.getUserChannel);
-// Get all channels
-router.get('/channels', authController.getAllChannels);
-// Get all users
-router.get('/users', authController.getAllUsers);
 
 /**
  * @swagger
- * /api/facebook:
+ * /api/users/me/profile:
  *   get:
- *     summary: Login with Facebook
- *     description: Redirects to Facebook for OAuth login. Use in browser.
+ *     summary: Get the profile of the currently authenticated user
  *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
- *       302:
- *         description: Redirect to Facebook OAuth
+ *       200:
+ *         description: User profile retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                 username:
+ *                   type: string
+ *                 email:
+ *                   type: string
+ *                 avatar_url:
+ *                   type: string
+ *                 bio:
+ *                   type: string
+ *                 role:
+ *                   type: string
+ *                 created_at:
+ *                   type: string
+ *                   format: date-time
+ *                 location:
+ *                   type: string
+ *                 website:
+ *                   type: string
+ *                 twitter:
+ *                   type: string
+ *                 instagram:
+ *                   type: string
+ *                 youtube:
+ *                   type: string
+ *       401:
+ *         description: "Unauthorized: user id missing"
+ *       404:
+ *         description: User not found
  */
-
-/**
- * @swagger
- * /api/google:
- *   get:
- *     summary: Login with Google
- *     description: Redirects to Google for OAuth login. Use in browser.
- *     tags: [Auth]
- *     responses:
- *       302:
- *         description: Redirect to Google OAuth
- */
+router.get('/users/me/profile', authenticateJWT, authController.getMyProfile);
 
 /**
  * @swagger
@@ -200,10 +195,29 @@ router.get('/users', authController.getAllUsers);
  *             properties:
  *               username:
  *                 type: string
+ *                 description: "User's display name"
  *               avatar_url:
  *                 type: string
+ *                 description: "URL to user's avatar image"
  *               bio:
  *                 type: string
+ *                 description: "User biography/about section"
+ *               location:
+ *                 type: string
+ *                 description: "User's location"
+ *               website:
+ *                 type: string
+ *                 description: "User's website URL"
+ *               twitter:
+ *                 type: string
+ *                 description: "Twitter profile URL or handle"
+ *               instagram:
+ *                 type: string
+ *                 description: "Instagram profile URL or handle"
+ *               youtube:
+ *                 type: string
+ *                 description: "YouTube profile URL or handle"
+ *             description: "All fields are optional. Only provided fields will be updated."
  *     responses:
  *       200:
  *         description: User profile updated successfully
@@ -251,5 +265,75 @@ router.get('/users', authController.getAllUsers);
  *       404:
  *         description: Channel not found
  */
+
+
+// View user profile
+router.get('/users/:id/profile', authController.getUserProfile);
+// Edit user profile
+router.put('/users/:id/profile', authenticateJWT,authController.editUserProfile);
+// View user channel details
+router.get('/users/:id/channel', authController.getUserChannel);
+// Get all channels
+router.get('/channels', authController.getAllChannels);
+// Get all users
+router.get('/users', authController.getAllUsers);
+
+/**
+ * @swagger
+ * /api/users/{id}/channel/videos:
+ *   get:
+ *     summary: Get all videos for a user's channel
+ *     tags: [Auth]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: "Page number (default: 1)"
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: "Number of videos per page (default: 20)"
+ *     responses:
+ *       200:
+ *         description: Paginated list of videos for the user's channel
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     videos:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Video'
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         page:
+ *                           type: integer
+ *                         limit:
+ *                           type: integer
+ *                         total:
+ *                           type: integer
+ *                         pages:
+ *                           type: integer
+ *       400:
+ *         description: Invalid user ID format
+ *       404:
+ *         description: Channel not found
+ */
+router.get('/users/:id/channel/videos', authController.getUserChannelVideos);
 
 module.exports = router;

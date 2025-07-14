@@ -87,7 +87,36 @@ exports.login = async (req, res) => {
     res.status(500).json({ error: 'Internal server error', reason: error.message });
   }
 };
-
+// Get current user's profile using token
+exports.getMyProfile = async (req, res) => {
+  try {
+    const userId = req.user && req.user.id ? req.user.id : null;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized: user id missing' });
+    }
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        avatar_url: true,
+        bio: true,
+        role: true,
+        created_at: true,
+        location: true,
+        website: true,
+        twitter: true,
+        instagram: true,
+        youtube: true
+      }
+    });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error', reason: error.message });
+  }
+};
 // Get user profile by user ID
 exports.getUserProfile = async (req, res) => {
   try {
@@ -104,7 +133,12 @@ exports.getUserProfile = async (req, res) => {
         avatar_url: true,
         bio: true,
         role: true,
-        created_at: true
+        created_at: true,
+        location: true,
+        website: true,
+        twitter: true,
+        instagram: true,
+        youtube: true
       }
     });
     if (!user) return res.status(404).json({ message: 'User not found' });
@@ -118,17 +152,46 @@ exports.getUserProfile = async (req, res) => {
 exports.editUserProfile = async (req, res) => {
   try {
     const userId = req.params.id;
-    const loggedInUserId = req.user && req.user.id ? req.user.id : null;
+    const loggedInUserId = req.user.id;
+    if (!loggedInUserId) {
+      return res.status(401).json({ message: 'Unauthorized: user id missing' });
+    }
     if (!isValidUUID(userId)) {
       return res.status(400).json({ message: 'Invalid user ID format' });
     }
     if (!loggedInUserId || loggedInUserId !== userId) {
       return res.status(403).json({ message: 'Forbidden: You can only edit your own profile' });
     }
-    const { username, avatar_url, bio } = req.body;
+    // Only update fields that are provided in req.body
+    const allowedFields = ['username', 'avatar_url', 'bio', 'location', 'website', 'twitter', 'instagram', 'youtube'];
+    const data = {};
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        data[field] = req.body[field];
+      }
+    }
+    // Fetch current user for comparison
+    const currentUser = await prisma.users.findUnique({ where: { id: userId } });
+    if (!currentUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    // Validation
+    if ('username' in data && data.username !== currentUser.username) {
+      // Check uniqueness (exclude current user)
+      const existing = await prisma.users.findFirst({ where: { username: data.username, id: { not: userId } } });
+      if (existing) {
+        return res.status(400).json({ message: 'Username is already taken' });
+      }
+    }
+    if ('bio' in data && data.bio && data.bio.length < 10) {
+      return res.status(400).json({ message: 'Bio must be at least 10 characters' });
+    }
+    if (!('location' in data) || !data.location || data.location.trim() === '') {
+      return res.status(400).json({ message: 'Location is required' });
+    }
     const user = await prisma.users.update({
       where: { id: userId },
-      data: { username, avatar_url, bio },
+      data,
       select: {
         id: true,
         username: true,
@@ -136,14 +199,30 @@ exports.editUserProfile = async (req, res) => {
         avatar_url: true,
         bio: true,
         role: true,
-        created_at: true
+        created_at: true,
+        location: true,
+        website: true,
+        twitter: true,
+        instagram: true,
+        youtube: true
       }
     });
     res.json(user);
   } catch (error) {
+    // Prisma unique constraint violation
+    if (error.code === 'P2002') {
+      return res.status(400).json({ message: 'Unique constraint failed on one or more fields', fields: error.meta?.target });
+    }
+    // Prisma not found
     if (error.code === 'P2025') {
       return res.status(404).json({ message: 'User not found' });
     }
+    // Other known Prisma errors
+    if (error.code) {
+      return res.status(400).json({ message: 'Database error', code: error.code, reason: error.message });
+    }
+    // Unexpected error
+    console.error('editUserProfile error:', error);
     res.status(500).json({ error: 'Internal server error', reason: error.message });
   }
 };
@@ -228,6 +307,50 @@ exports.getAllUsers = async (req, res) => {
       }
     });
     res.json(users);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error', reason: error.message });
+  }
+};
+
+
+
+// Get all videos for a user's channel
+exports.getUserChannelVideos = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    if (!isValidUUID(userId)) {
+      return res.status(400).json({ message: 'Invalid user ID format' });
+    }
+    // Find the user's channel
+    const channel = await prisma.channels.findUnique({ where: { user_id: userId } });
+    if (!channel) return res.status(404).json({ message: 'Channel not found' });
+    // Pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    // Get videos for the channel
+    const videos = await prisma.videos.findMany({
+      where: { channel_id: channel.id },
+      orderBy: { created_at: 'desc' },
+      skip,
+      take: limit,
+      include: {
+        video_tags: { include: { tag: true } }
+      }
+    });
+    const total = await prisma.videos.count({ where: { channel_id: channel.id } });
+    res.json({
+      success: true,
+      data: {
+        videos,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error', reason: error.message });
   }
