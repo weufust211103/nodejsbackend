@@ -556,6 +556,88 @@ router.get('/tiktok/user', authenticateToken, videoController.getUserTikTokVideo
 
 /**
  * @swagger
+ * /api/videos/tiktok/upload:
+ *   post:
+ *     summary: Upload a video and publish to TikTok
+ *     tags: [TikTok]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *               - title
+ *               - description
+ *               - category
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: The video file to upload
+ *               title:
+ *                 type: string
+ *                 description: Video title
+ *               description:
+ *                 type: string
+ *                 description: Video description
+ *               category:
+ *                 type: string
+ *                 description: Video category
+ *               tags:
+ *                 type: string
+ *                 description: Comma-separated tags (e.g. "#funny,#music")
+ *               allow_comments:
+ *                 type: boolean
+ *                 description: Allow comments on this video (default true)
+ *               allow_download:
+ *                 type: boolean
+ *                 description: Allow users to download this video (default false)
+ *               visibility:
+ *                 type: string
+ *                 enum: [public, unlisted, private]
+ *                 description: Video visibility status
+ *               notify_subscribers:
+ *                 type: boolean
+ *                 description: Notify subscribers (default false)
+ *     responses:
+ *       201:
+ *         description: Video uploaded and published to TikTok successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 tiktok:
+ *                   type: object
+ *                   description: TikTok API response
+ *                 video_url:
+ *                   type: string
+ *       400:
+ *         description: Bad request (missing file or required fields)
+ *       401:
+ *         description: Unauthorized. Please Login First to Upload Video.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Please Login First to Upload Video
+ *       500:
+ *         description: Server error
+ */
+// POST /api/videos/tiktok/upload
+router.post('/tiktok/upload', authenticateToken, upload.single('file'), videoController.uploadVideoToTikTok);
+
+/**
+ * @swagger
  * /api/videos/all-with-tags:
  *   get:
  *     summary: Get all videos with tags

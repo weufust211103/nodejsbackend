@@ -34,7 +34,7 @@ router.get('/tiktok', (req, res) => {
   const params = new URLSearchParams({
     client_key: CLIENT_KEY,
     response_type: 'code',
-    scope: 'user.info.basic,video.list',
+    scope: 'user.info.basic,video.list,video.publish,video.upload,user.info.profile',
     redirect_uri: REDIRECT_URI,
     state: csrfState,
     prompt: 'consent'
