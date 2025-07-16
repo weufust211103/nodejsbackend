@@ -266,7 +266,64 @@ router.get('/users/me/profile', authenticateJWT, authController.getMyProfile);
  *         description: Channel not found
  */
 
-
+/**
+ * @swagger
+ * /api/users:
+ *   get:
+ *     summary: Get all users
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: List of all users
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                   username:
+ *                     type: string
+ *                   email:
+ *                     type: string
+ *                   avatar_url:
+ *                     type: string
+ *                   bio:
+ *                     type: string
+ *                   role:
+ *                     type: string
+ *                   created_at:
+ *                     type: string
+ *                     format: date-time
+ *
+ * /api/channels:
+ *   get:
+ *     summary: Get all channels
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: List of all channels
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                   user_id:
+ *                     type: string
+ *                   name:
+ *                     type: string
+ *                   description:
+ *                     type: string
+ *                   created_at:
+ *                     type: string
+ *                     format: date-time
+ */
 // View user profile
 router.get('/users/:id/profile', authController.getUserProfile);
 // Edit user profile
@@ -335,5 +392,64 @@ router.get('/users', authController.getAllUsers);
  *         description: Channel not found
  */
 router.get('/users/:id/channel/videos', authController.getUserChannelVideos);
+
+/**
+ * @swagger
+ * /api/channels/full:
+ *   get:
+ *     summary: Get all channels with user profile and videos
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: List of all channels with user profile and videos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                   user_id:
+ *                     type: string
+ *                   name:
+ *                     type: string
+ *                   description:
+ *                     type: string
+ *                   created_at:
+ *                     type: string
+ *                     format: date-time
+ *                   user:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string }
+ *                       username: { type: string }
+ *                       email: { type: string }
+ *                       avatar_url: { type: string }
+ *                       bio: { type: string }
+ *                       role: { type: string }
+ *                       created_at: { type: string, format: date-time }
+ *                       location: { type: string }
+ *                       website: { type: string }
+ *                       twitter: { type: string }
+ *                       instagram: { type: string }
+ *                       youtube: { type: string }
+ *                   videos:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         id: { type: string }
+ *                         title: { type: string }
+ *                         description: { type: string }
+ *                         category: { type: string }
+ *                         video_url: { type: string }
+ *                         allow_comments: { type: boolean }
+ *                         allow_download: { type: boolean }
+ *                         created_at: { type: string, format: date-time }
+ *                         views: { type: integer }
+ */
+router.get('/channels/full', authController.getAllChannelsWithUserAndVideos);
 
 module.exports = router;

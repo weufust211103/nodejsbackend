@@ -207,6 +207,13 @@ exports.editUserProfile = async (req, res) => {
         youtube: true
       }
     });
+    // If bio was updated, update the channel description as well
+    if ('bio' in data) {
+      await prisma.channels.updateMany({
+        where: { user_id: userId },
+        data: { description: data.bio }
+      });
+    }
     res.json(user);
   } catch (error) {
     // Prisma unique constraint violation
@@ -312,6 +319,47 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
+// Get all channels with user profile and videos
+exports.getAllChannelsWithUserAndVideos = async (req, res) => {
+  try {
+    const channels = await prisma.channels.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            avatar_url: true,
+            bio: true,
+            role: true,
+            created_at: true,
+            location: true,
+            website: true,
+            twitter: true,
+            instagram: true,
+            youtube: true
+          }
+        },
+        videos: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            category: true,
+            video_url: true,
+            allow_comments: true,
+            allow_download: true,
+            created_at: true,
+            views: true
+          }
+        }
+      }
+    });
+    res.json(channels);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error', reason: error.message });
+  }
+};
 
 
 // Get all videos for a user's channel
